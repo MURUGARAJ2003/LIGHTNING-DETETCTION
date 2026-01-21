@@ -648,15 +648,6 @@ tbody tr:hover {
   }
 }
 
-@keyframes gauge-fill {
-  from {
-    stroke-dashoffset: 283;
-  }
-  to {
-    stroke-dashoffset: var(--gauge-value);
-  }
-}
-
 .fade-in {
   animation: fadeIn 0.5s ease-out;
 }
@@ -789,7 +780,7 @@ tbody tr:hover {
   <div class="header-controls">
     <div class="status-indicator">
       <div class="status-dot connected" id="connectionStatus"></div>
-      <span id="connectionText">System Connected</span>
+      <span id="connectionText">Connecting...</span>
     </div>
     
     <div class="current-time">
@@ -822,7 +813,7 @@ tbody tr:hover {
       </div>
       <div class="stat-trend">
         <i class="fas fa-chart-line"></i>
-        <span class="trend-up">+2 this week</span>
+        <span class="trend-up">Monitoring</span>
       </div>
     </div>
     
@@ -841,7 +832,7 @@ tbody tr:hover {
       </div>
       <div class="stat-trend">
         <i class="fas fa-chart-line"></i>
-        <span id="temperatureTrend" class="trend-neutral">Stable</span>
+        <span id="temperatureTrend" class="trend-neutral">Waiting...</span>
       </div>
     </div>
     
@@ -860,7 +851,7 @@ tbody tr:hover {
       </div>
       <div class="stat-trend">
         <i class="fas fa-chart-line"></i>
-        <span id="humidityTrend" class="trend-neutral">Stable</span>
+        <span id="humidityTrend" class="trend-neutral">Waiting...</span>
       </div>
     </div>
     
@@ -916,12 +907,11 @@ tbody tr:hover {
             </tr>
           </thead>
           <tbody id="faultTable">
-            <!-- Data will be populated here -->
             <tr>
               <td colspan="6" class="text-center" style="padding: 40px;">
                 <div class="text-muted">
                   <i class="fas fa-spinner fa-spin fa-2x mb-2"></i>
-                  <div>Loading fault data...</div>
+                  <div>Connecting to Firebase...</div>
                 </div>
               </td>
             </tr>
@@ -938,18 +928,13 @@ tbody tr:hover {
       </h3>
       
       <div class="info-item">
-        <span class="info-label">ESP32 Connection</span>
-        <span class="info-value connected" id="esp32Status">Connected</span>
+        <span class="info-label">Firebase Connection</span>
+        <span class="info-value disconnected" id="firebaseStatus">Connecting...</span>
       </div>
       
       <div class="info-item">
         <span class="info-label">DHT11 Sensor</span>
-        <span class="info-value connected" id="dht11Status">Active</span>
-      </div>
-      
-      <div class="info-item">
-        <span class="info-label">Firebase Sync</span>
-        <span class="info-value connected" id="firebaseStatus">Active</span>
+        <span class="info-value disconnected" id="dht11Status">Waiting...</span>
       </div>
       
       <div class="info-item">
@@ -965,6 +950,11 @@ tbody tr:hover {
       <div class="info-item">
         <span class="info-label">API Response</span>
         <span class="info-value">124ms</span>
+      </div>
+      
+      <div class="info-item">
+        <span class="info-label">Fault Logs</span>
+        <span class="info-value" id="faultLogsCount">0</span>
       </div>
     </div>
   </div>
@@ -988,8 +978,9 @@ tbody tr:hover {
 
 <!-- ===== FIREBASE INTEGRATION ===== -->
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-database.js";
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+import { getDatabase, ref, onValue, get } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-database.js";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -1004,12 +995,12 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const database = getDatabase(app);
 
-// Track previous values for trend calculation
+// Global variables for data tracking
 let previousTemperature = null;
 let previousHumidity = null;
-let previousTimestamp = null;
+let isFirebaseConnected = false;
 
 // Update time function
 function updateTime() {
@@ -1027,162 +1018,215 @@ function updateTime() {
 setInterval(updateTime, 1000);
 updateTime();
 
-// Connection status monitoring
-const connectedRef = ref(db, ".info/connected");
+// Check Firebase connection status
+const connectedRef = ref(database, ".info/connected");
 onValue(connectedRef, (snap) => {
-  const isConnected = snap.val() === true;
+  isFirebaseConnected = snap.val() === true;
+  updateConnectionStatus();
+});
+
+// Function to update all connection indicators
+function updateConnectionStatus() {
   const statusDot = document.getElementById('connectionStatus');
   const statusText = document.getElementById('connectionText');
-  const esp32Status = document.getElementById('esp32Status');
   const firebaseStatus = document.getElementById('firebaseStatus');
-  const dht11Status = document.getElementById('dht11Status');
   
-  if (isConnected) {
+  if (isFirebaseConnected) {
     statusDot.className = "status-dot connected";
-    statusText.textContent = "System Connected";
-    esp32Status.textContent = "Connected";
-    esp32Status.className = "info-value connected";
-    firebaseStatus.textContent = "Active";
+    statusText.textContent = "Firebase Connected";
+    firebaseStatus.textContent = "Connected";
     firebaseStatus.className = "info-value connected";
-    dht11Status.textContent = "Active";
-    dht11Status.className = "info-value connected";
+    console.log("✅ Firebase connection established");
   } else {
     statusDot.className = "status-dot disconnected";
-    statusText.textContent = "System Offline";
-    esp32Status.textContent = "Disconnected";
-    esp32Status.className = "info-value disconnected";
-    firebaseStatus.textContent = "Inactive";
+    statusText.textContent = "Firebase Disconnected";
+    firebaseStatus.textContent = "Disconnected";
     firebaseStatus.className = "info-value disconnected";
-    dht11Status.textContent = "Inactive";
-    dht11Status.className = "info-value disconnected";
+    console.log("❌ Firebase connection lost");
   }
-});
+}
 
 // Monitor DHT11 Data (Temperature & Humidity)
-onValue(ref(db, "DHT11"), (snap) => {
-  if (!snap.exists()) return;
+function monitorDHT11() {
+  const dht11Ref = ref(database, "DHT11");
   
-  const data = snap.val();
-  const temperatureElement = document.getElementById('temperatureValue');
-  const humidityElement = document.getElementById('humidityValue');
-  const temperatureTrendElement = document.getElementById('temperatureTrend');
-  const humidityTrendElement = document.getElementById('humidityTrend');
-  
-  const currentTemp = data.Temperature || data.temperature || data.temp || null;
-  const currentHumidity = data.Humidity || data.humidity || data.hum || null;
-  
-  // Update temperature
-  if (currentTemp !== null) {
-    const tempValue = parseFloat(currentTemp).toFixed(1);
-    temperatureElement.textContent = tempValue;
-    
-    // Check for temperature warnings
-    const tempCard = document.querySelector('.stat-card.temperature');
-    if (tempValue > 40) {
-      tempCard.classList.add('critical');
-      tempCard.classList.remove('warning');
-    } else if (tempValue > 35) {
-      tempCard.classList.add('warning');
-      tempCard.classList.remove('critical');
-    } else {
-      tempCard.classList.remove('critical', 'warning');
+  onValue(dht11Ref, (snapshot) => {
+    if (!snapshot.exists()) {
+      console.log("⚠️ No DHT11 data found at /DHT11 path");
+      document.getElementById('dht11Status').textContent = "No Data";
+      document.getElementById('dht11Status').className = "info-value disconnected";
+      return;
     }
     
-    // Calculate temperature trend
-    if (previousTemperature !== null) {
-      const tempDiff = currentTemp - previousTemperature;
-      if (Math.abs(tempDiff) > 0.5) {
-        temperatureTrendElement.textContent = tempDiff > 0 ? "Rising" : "Falling";
-        temperatureTrendElement.className = tempDiff > 0 ? "trend-up" : "trend-down";
+    const data = snapshot.val();
+    console.log("📊 DHT11 Data received:", data);
+    
+    const temperatureElement = document.getElementById('temperatureValue');
+    const humidityElement = document.getElementById('humidityValue');
+    const temperatureTrendElement = document.getElementById('temperatureTrend');
+    const humidityTrendElement = document.getElementById('humidityTrend');
+    const dht11Status = document.getElementById('dht11Status');
+    
+    // Update DHT11 status
+    dht11Status.textContent = "Active";
+    dht11Status.className = "info-value connected";
+    
+    // Get temperature and humidity values
+    let currentTemp = null;
+    let currentHumidity = null;
+    
+    // Try different possible key names
+    if (data.Temperature !== undefined) currentTemp = data.Temperature;
+    else if (data.temperature !== undefined) currentTemp = data.temperature;
+    else if (data.temp !== undefined) currentTemp = data.temp;
+    else if (data.TEMP !== undefined) currentTemp = data.TEMP;
+    
+    if (data.Humidity !== undefined) currentHumidity = data.Humidity;
+    else if (data.humidity !== undefined) currentHumidity = data.humidity;
+    else if (data.hum !== undefined) currentHumidity = data.hum;
+    else if (data.HUM !== undefined) currentHumidity = data.HUM;
+    
+    // Update temperature
+    if (currentTemp !== null) {
+      const tempValue = parseFloat(currentTemp).toFixed(1);
+      temperatureElement.textContent = tempValue;
+      
+      // Check for temperature warnings
+      const tempCard = document.querySelector('.stat-card.temperature');
+      if (tempValue > 40) {
+        tempCard.classList.add('critical');
+        tempCard.classList.remove('warning');
+      } else if (tempValue > 35) {
+        tempCard.classList.add('warning');
+        tempCard.classList.remove('critical');
       } else {
-        temperatureTrendElement.textContent = "Stable";
+        tempCard.classList.remove('critical', 'warning');
+      }
+      
+      // Calculate temperature trend
+      if (previousTemperature !== null) {
+        const tempDiff = currentTemp - previousTemperature;
+        if (Math.abs(tempDiff) > 0.5) {
+          temperatureTrendElement.textContent = tempDiff > 0 ? "Rising" : "Falling";
+          temperatureTrendElement.className = tempDiff > 0 ? "trend-up" : "trend-down";
+        } else {
+          temperatureTrendElement.textContent = "Stable";
+          temperatureTrendElement.className = "trend-neutral";
+        }
+      } else {
+        temperatureTrendElement.textContent = "Initial";
         temperatureTrendElement.className = "trend-neutral";
       }
-    }
-    previousTemperature = currentTemp;
-  }
-  
-  // Update humidity
-  if (currentHumidity !== null) {
-    const humidityValue = parseFloat(currentHumidity).toFixed(1);
-    humidityElement.textContent = humidityValue;
-    
-    // Check for humidity warnings
-    const humidityCard = document.querySelector('.stat-card.humidity');
-    if (humidityValue > 80) {
-      humidityCard.classList.add('critical');
-      humidityCard.classList.remove('warning');
-    } else if (humidityValue > 70) {
-      humidityCard.classList.add('warning');
-      humidityCard.classList.remove('critical');
-    } else {
-      humidityCard.classList.remove('critical', 'warning');
+      previousTemperature = currentTemp;
     }
     
-    // Calculate humidity trend
-    if (previousHumidity !== null) {
-      const humDiff = currentHumidity - previousHumidity;
-      if (Math.abs(humDiff) > 2) {
-        humidityTrendElement.textContent = humDiff > 0 ? "Rising" : "Falling";
-        humidityTrendElement.className = humDiff > 0 ? "trend-up" : "trend-down";
+    // Update humidity
+    if (currentHumidity !== null) {
+      const humidityValue = parseFloat(currentHumidity).toFixed(1);
+      humidityElement.textContent = humidityValue;
+      
+      // Check for humidity warnings
+      const humidityCard = document.querySelector('.stat-card.humidity');
+      if (humidityValue > 80) {
+        humidityCard.classList.add('critical');
+        humidityCard.classList.remove('warning');
+      } else if (humidityValue > 70) {
+        humidityCard.classList.add('warning');
+        humidityCard.classList.remove('critical');
       } else {
-        humidityTrendElement.textContent = "Stable";
+        humidityCard.classList.remove('critical', 'warning');
+      }
+      
+      // Calculate humidity trend
+      if (previousHumidity !== null) {
+        const humDiff = currentHumidity - previousHumidity;
+        if (Math.abs(humDiff) > 2) {
+          humidityTrendElement.textContent = humDiff > 0 ? "Rising" : "Falling";
+          humidityTrendElement.className = humDiff > 0 ? "trend-up" : "trend-down";
+        } else {
+          humidityTrendElement.textContent = "Stable";
+          humidityTrendElement.className = "trend-neutral";
+        }
+      } else {
+        humidityTrendElement.textContent = "Initial";
         humidityTrendElement.className = "trend-neutral";
       }
+      previousHumidity = currentHumidity;
     }
-    previousHumidity = currentHumidity;
-  }
-  
-  // Update last sync time
-  const now = new Date();
-  document.getElementById('lastSync').textContent = now.toLocaleTimeString('en-US', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
+    
+    // Update last sync time
+    const now = new Date();
+    document.getElementById('lastSync').textContent = now.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    
+  }, (error) => {
+    console.error("❌ Error reading DHT11 data:", error);
+    document.getElementById('dht11Status').textContent = "Error";
+    document.getElementById('dht11Status').className = "info-value disconnected";
   });
-});
+}
 
-// Total fault count with animation
-onValue(ref(db, "FaultLogs/totalFaults"), (snap) => {
-  const countElement = document.getElementById('faultCount');
-  const newValue = snap.exists() ? snap.val() : 0;
-  const oldValue = parseInt(countElement.textContent) || 0;
+// Monitor Fault Logs
+function monitorFaultLogs() {
+  const faultLogsRef = ref(database, "FaultLogs");
   
-  if (newValue !== oldValue) {
-    countElement.classList.add('count-up');
-    setTimeout(() => {
-      countElement.classList.remove('count-up');
-    }, 300);
-  }
-  
-  countElement.textContent = newValue;
-});
-
-// Fault logs display
-onValue(ref(db, "FaultLogs"), (snap) => {
-  const table = document.getElementById('faultTable');
-  const logs = [];
-  
-  snap.forEach(child => {
-    if (child.key.startsWith('fault_') || child.key === 'totalFaults') {
-      if (child.key !== 'totalFaults') {
-        const data = child.val();
+  onValue(faultLogsRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      console.log("⚠️ No FaultLogs data found");
+      updateFaultTable([]);
+      return;
+    }
+    
+    const data = snapshot.val();
+    const logs = [];
+    
+    // Process fault logs
+    Object.keys(data).forEach(key => {
+      if (key !== 'totalFaults') {
+        const log = data[key];
         logs.push({
-          key: child.key,
-          id: child.key.replace('fault_', ''),
-          time: data.time || '--:--:--',
-          reason: data.reason || 'Unknown Fault',
-          status: data.status || 'Active'
+          id: key,
+          time: log.time || log.timestamp || '--:--:--',
+          reason: log.reason || log.faultType || 'Unknown Fault',
+          status: log.status || 'Active'
         });
       }
+    });
+    
+    // Update total fault count
+    if (data.totalFaults !== undefined) {
+      const countElement = document.getElementById('faultCount');
+      const newValue = data.totalFaults;
+      const oldValue = parseInt(countElement.textContent) || 0;
+      
+      if (newValue !== oldValue) {
+        countElement.classList.add('count-up');
+        setTimeout(() => {
+          countElement.classList.remove('count-up');
+        }, 300);
+      }
+      
+      countElement.textContent = newValue;
+      document.getElementById('faultLogsCount').textContent = logs.length;
     }
+    
+    // Update fault table
+    updateFaultTable(logs);
+    
+  }, (error) => {
+    console.error("❌ Error reading FaultLogs:", error);
+    updateFaultTable([]);
   });
+}
+
+// Update fault table
+function updateFaultTable(logs) {
+  const table = document.getElementById('faultTable');
   
-  // Sort by ID (newest first)
-  logs.sort((a, b) => parseInt(b.id) - parseInt(a.id));
-  
-  // Update table
   if (logs.length === 0) {
     table.innerHTML = `
       <tr>
@@ -1202,13 +1246,16 @@ onValue(ref(db, "FaultLogs"), (snap) => {
       let severity = 'Medium';
       let badgeClass = 'badge-warning';
       
-      if (log.reason.toLowerCase().includes('critical') || log.reason.toLowerCase().includes('overload')) {
+      const reason = log.reason.toLowerCase();
+      const status = log.status.toLowerCase();
+      
+      if (reason.includes('critical') || reason.includes('overload') || reason.includes('emergency')) {
         severity = 'Critical';
         badgeClass = 'badge-critical';
-      } else if (log.reason.toLowerCase().includes('warning') || log.reason.toLowerCase().includes('threshold')) {
+      } else if (reason.includes('warning') || reason.includes('threshold') || reason.includes('high')) {
         severity = 'Warning';
         badgeClass = 'badge-warning';
-      } else if (log.status.toLowerCase().includes('resolved')) {
+      } else if (status.includes('resolved') || status.includes('fixed') || status.includes('cleared')) {
         badgeClass = 'badge-resolved';
       }
       
@@ -1220,7 +1267,7 @@ onValue(ref(db, "FaultLogs"), (snap) => {
       
       html += `
         <tr style="animation: slideInRight 0.3s ease ${index * 0.05}s both;">
-          <td style="font-weight: 700; color: var(--gray-900);">#${log.id}</td>
+          <td style="font-weight: 700; color: var(--gray-900);">${log.id}</td>
           <td style="font-family: 'Monaco', 'Consolas', monospace; font-weight: 500;">${log.time}</td>
           <td style="font-weight: 500;">${log.reason}</td>
           <td>
@@ -1242,7 +1289,54 @@ onValue(ref(db, "FaultLogs"), (snap) => {
     });
     table.innerHTML = html;
   }
-});
+}
+
+// Initialize monitoring
+function initializeMonitoring() {
+  console.log("🚀 Initializing Firebase monitoring...");
+  
+  // Start monitoring DHT11 data
+  monitorDHT11();
+  
+  // Start monitoring fault logs
+  monitorFaultLogs();
+  
+  // Check database structure
+  checkDatabaseStructure();
+}
+
+// Check database structure
+async function checkDatabaseStructure() {
+  console.log("🔍 Checking database structure...");
+  
+  try {
+    const rootRef = ref(database);
+    const snapshot = await get(rootRef);
+    
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      console.log("📁 Database structure:", Object.keys(data));
+      
+      // Check for DHT11 data
+      if (data.DHT11) {
+        console.log("✅ DHT11 data path found:", data.DHT11);
+      } else {
+        console.log("⚠️ DHT11 data path not found. Expected at /DHT11");
+      }
+      
+      // Check for FaultLogs data
+      if (data.FaultLogs) {
+        console.log("✅ FaultLogs data path found");
+      } else {
+        console.log("⚠️ FaultLogs data path not found. Expected at /FaultLogs");
+      }
+    } else {
+      console.log("📭 Database is empty");
+    }
+  } catch (error) {
+    console.error("❌ Error checking database structure:", error);
+  }
+}
 
 // System metrics simulation
 function updateSystemMetrics() {
@@ -1251,35 +1345,44 @@ function updateSystemMetrics() {
   
   // Random updates
   if (Math.random() > 0.7) {
-    const memoryElement = document.querySelector('.info-item:nth-child(5) .info-value');
+    const memoryElement = document.querySelector('.info-item:nth-child(4) .info-value');
     memoryElement.textContent = metrics[Math.floor(Math.random() * metrics.length)];
   }
   
   if (Math.random() > 0.6) {
-    const responseElement = document.querySelector('.info-item:nth-child(6) .info-value');
+    const responseElement = document.querySelector('.info-item:nth-child(5) .info-value');
     responseElement.textContent = responses[Math.floor(Math.random() * responses.length)];
   }
 }
 
-setInterval(updateSystemMetrics, 8000);
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  console.log("📱 Page loaded, starting initialization...");
+  setTimeout(initializeMonitoring, 1000); // Small delay to ensure Firebase is ready
+  setInterval(updateSystemMetrics, 8000);
+});
 
 // Utility functions
 function exportData() {
-  alert('Export functionality would generate a CSV file with all fault logs and sensor data.');
-  // In production, this would generate and download a CSV file
+  alert('Export functionality would generate a CSV file with all fault logs and sensor data.\n\nIn production, this would generate and download a CSV file.');
 }
 
 function refreshData() {
   const refreshBtn = event.target.closest('.btn');
+  const originalHTML = refreshBtn.innerHTML;
   refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+  refreshBtn.disabled = true;
+  
   setTimeout(() => {
-    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
+    refreshBtn.innerHTML = originalHTML;
+    refreshBtn.disabled = false;
     alert('Data refreshed successfully!');
-  }, 1000);
+    console.log("🔄 Manual refresh triggered");
+  }, 1500);
 }
 
 function viewDetails(faultId) {
-  alert(`Viewing details for Fault #${faultId}\n\nThis would open a detailed view with more information.`);
+  alert(`Viewing details for Fault: ${faultId}\n\nThis would open a detailed view with more information.\n\nIn production, this would navigate to a detailed fault view.`);
 }
 
 // Button click animations
@@ -1292,6 +1395,19 @@ document.addEventListener('click', function(e) {
     }, 150);
   }
 });
+
+// Error handling for Firebase
+window.addEventListener('error', function(e) {
+  console.error('Global error:', e.error);
+  if (e.error.message && e.error.message.includes('Firebase')) {
+    alert('Firebase Error: ' + e.error.message + '\n\nPlease check your Firebase configuration.');
+  }
+});
+
+// Export for debugging
+window.firebaseApp = app;
+window.firebaseDB = database;
+console.log("🔧 Firebase initialized. Use firebaseDB in console to debug.");
 </script>
 
 </body>
